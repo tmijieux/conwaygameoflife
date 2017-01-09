@@ -7,8 +7,8 @@
 #include <stdint.h>
 #include <assert.h>
 
-#define cell( _i_, _j_ ) board[ ldboard * (_j_) + (_i_) ]
-#define ngb( _i_, _j_ )  nbngb[ ldnbngb * ((_j_) - 1) + ((_i_) - 1 ) ]
+#define cell( _i_, _j_ ) board[ ld_board * (_j_) + (_i_) ]
+#define ngb( _i_, _j_ )  nb_neighbour[ ld_nb_neighbour * ((_j_) - 1) + ((_i_) - 1 ) ]
 
 
 struct thread_info {
@@ -21,14 +21,14 @@ struct thread_info {
     int read_right;
 };
 
-double mytimer(void)
+static double cgl_timer(void)
 {
     struct timeval tp;
     gettimeofday( &tp, NULL );
     return tp.tv_sec + 1e-6 * tp.tv_usec;
 }
 
-void output_board(int N, int *board, int ldboard, int loop)
+static void output_board(int N, int *board, int ld_board, int loop)
 {
     printf("loop %d\n", loop);
     for (int i=0; i<N; i++) {
@@ -46,7 +46,7 @@ void output_board(int N, int *board, int ldboard, int loop)
  * This function generates the iniatl board with one row and one
  * column of living cells in the middle of the board
  */
-int generate_initial_board(int N, int *board, int ldboard)
+static int generate_initial_board(int N, int *board, int ld_board)
 {
     int num_alive = 0;
 
@@ -82,10 +82,10 @@ static void barrier_STOP(int nb_threads)
     pthread_mutex_unlock(&mut_barrier);
 }
 
-int BS, maxloop;
-int ldboard, ldnbngb;
-int *board, *nbngb;
-int nb_threads;
+int board_size, maxloop, nb_threads;
+int ld_board, ld_nb_neighbour;
+int *board, *nb_neighbour;
+
 struct thread_info *thread_infos;
 
 static void notify_read_to_neighbours(int rank, int loop)
@@ -128,30 +128,30 @@ static void *main_loop(void *args)
 
     for (int loop = 0; loop <= maxloop; loop++) {
 	if (rank == 0){
-	    cell(   0, 0   ) = cell(BS, BS);
-	    cell(   0, BS+1) = cell(BS,  1);
-	    cell(BS+1, 0   ) = cell( 1, BS);
-	    cell(BS+1, BS+1) = cell( 1,  1);
+	    cell(   0, 0   ) = cell(board_size, board_size);
+	    cell(   0, board_size+1) = cell(board_size,  1);
+	    cell(board_size+1, 0   ) = cell( 1, board_size);
+	    cell(board_size+1, board_size+1) = cell( 1,  1);
 
-	    for (int i = 1; i <= BS; i++) {
-		cell(   i,    0) = cell( i, BS);
-		cell(   i, BS+1) = cell( i,  1);
-		cell(   0,    i) = cell(BS,  i);
-		cell(BS+1,    i) = cell( 1,  i);
+	    for (int i = 1; i <= board_size; i++) {
+		cell(   i,    0) = cell( i, board_size);
+		cell(   i, board_size+1) = cell( i,  1);
+		cell(   0,    i) = cell(board_size,  i);
+		cell(board_size+1,    i) = cell( 1,  i);
 	    }
 	}
 	barrier_STOP(nb_threads);
 
         assert(  ("board size must be multiple of thread count",
-                  BS % nb_threads == 0) );
+                  board_size % nb_threads == 0) );
 
-	int block_size = BS/nb_threads;
+	int block_size = board_size/nb_threads;
 	/* printf("j start : %d , j end : %d\n",  */
 	/*        block_size*rank+1 , block_size*(rank+1)); */
 
 	// 1 - Lire les cellules des threads voisins
 	int B = block_size*rank+1, C = block_size*(rank+1);
-	for (int i = 1; i <= BS; i++) {
+	for (int i = 1; i <= board_size; i++) {
 	    ngb( i, B ) =
 		cell( i-1, B-1 ) + cell( i, B-1 ) + cell( i+1, B-1 );
 	    ngb( i, C ) =
@@ -162,7 +162,7 @@ static void *main_loop(void *args)
 
 	// 3 - Calcul Interne
 	for (int j = block_size*rank+1; j <= block_size*(rank+1) ; j++) {
-	    for (int i = 1; i <= BS; i++) {
+	    for (int i = 1; i <= board_size; i++) {
 		ngb( i, j ) = ((j==B || j==C)?ngb(i, j): 0) +
 		    (j>B) ?
                     (cell(i-1, j-1) + cell(i, j-1) + cell(i+1, j-1)) : 0
@@ -174,7 +174,7 @@ static void *main_loop(void *args)
 	barrier_STOP(nb_threads);
 
 	for (int j = block_size*rank+1; j <= block_size*(rank+1) ; j++) {
-	    for (int i = 1; i <= BS; i++) {
+	    for (int i = 1; i <= board_size; i++) {
 		if ( (ngb( i, j ) < 2) || (ngb( i, j ) > 3) )
 		    cell(i, j) = 0;
 		else if ((ngb( i, j )) == 3)
@@ -201,10 +201,10 @@ static void *main_loop(void *args)
 	/* Avec les cellules sur les bords
            (utile pour vérifier les comm MPI) */
 
-	/* output_board( BS+2, &(cell(0, 0)), ldboard, loop ); */
+	/* output_board( board_size+2, &(cell(0, 0)), ld_board, loop ); */
 
 	/* Avec juste les "vraies" cellules: on commence à l'élément (1,1) */
-	// output_board( BS, &(cell(1, 1)), ldboard, loop);
+	// output_board( board_size, &(cell(1, 1)), ld_board, loop);
 	// printf("%d cells are alive\n", num_alive);
     }
 
@@ -215,13 +215,15 @@ static void *main_loop(void *args)
 void game_of_life(void)
 {
     /* Leading dimension of the board array */
-    ldboard = BS + 2;
+    ld_board = board_size + 2;
     /* Leading dimension of the neigbour counters array */
-    ldnbngb = BS;
+    ld_nb_neighbour = board_size;
 
-    board = malloc( ldboard * ldboard * sizeof(int) );
-    nbngb = malloc( ldnbngb * ldnbngb * sizeof(int) );
-    int num_alive = generate_initial_board( BS, &(cell(1, 1)), ldboard );
+    board = malloc( ld_board * ld_board * sizeof(int) );
+    nb_neighbour = malloc( ld_nb_neighbour * ld_nb_neighbour * sizeof(int) );
+
+    int num_alive;
+    num_alive = generate_initial_board(board_size, &(cell(1, 1)), ld_board);
 
     printf("Starting number of living cells = %d\n", num_alive);
     nb_threads = 5;// get_nprocs();
@@ -242,7 +244,7 @@ void game_of_life(void)
 	pthread_join(t[i], NULL);
 
     free(board);
-    free(nbngb);
+    free(nb_neighbour);
 }
 
 int main(int argc, char *argv[])
@@ -252,17 +254,17 @@ int main(int argc, char *argv[])
 	return EXIT_SUCCESS;
     }
     maxloop = atoi(argv[1]);
-    BS = atoi(argv[2]);
+    board_size = atoi(argv[2]);
 
     printf("Running OMP version, "
-	   "grid of size %d, %d iterations\n", BS, maxloop);
+	   "grid of size %d, %d iterations\n", board_size, maxloop);
 
-    double t1 = mytimer();
+    double t1 = cgl_timer();
     game_of_life();
-    double t2 = mytimer();
+    double t2 = cgl_timer();
 
-    double temps = t2 - t1;
-    printf("%.2lf\n",(double)temps * 1.e3);
+    double time = t2 - t1;
+    printf("%.2g\n", time * 1.e3);
 
     return EXIT_SUCCESS;
 }
