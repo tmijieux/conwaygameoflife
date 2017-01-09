@@ -100,10 +100,11 @@ static void main_loop(const int BS, int maxloop)
 	    }
 	}
 
-	/* Avec les cellules sur les bords (utile pour vérifier les comm MPI) */
+	/* Avec les cellules sur les bords
+           (utile pour vÃ©rifier les comm MPI) */
 	/* output_board( BS+2, &(cell(0, 0)), ldboard, loop ); */
 
-	/* Avec juste les "vraies" cellules: on commence à l'élément (1,1) */
+	/* Avec juste les "vraies" cellules: on commence Ã  l'Ã©lÃ©ment (1,1) */
 	// output_board( BS, &(cell(1, 1)), ldboard, loop);
 	// printf("%d cells are alive\n", num_alive);
     }

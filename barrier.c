@@ -1,6 +1,6 @@
 void barrier_STOP(int nb_threads)
 {
-    static int barrier = 0;    
+    static int barrier = 0;
     static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
     static pthread_mutex_t mut_barrier = PTHREAD_MUTEX_INITIALIZER;
 
@@ -13,6 +13,6 @@ void barrier_STOP(int nb_threads)
 	pthread_cond_broadcast(&cond);
     } else
 	pthread_cond_wait(&cond, &mut_barrier);
-    
+
     pthread_mutex_unlock(&mut_barrier);
 }
