@@ -4,6 +4,6 @@
 *.a
 *.d
 TAGS
-life
 life_seq
 life_pthread
+life_omp

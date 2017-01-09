@@ -3,6 +3,10 @@
 #include <sys/time.h>
 #include <string.h>
 
+#define SQUARE(x)  ((x)*(x))
+#define MALLOC_ARRAY(var, size) ((var) = malloc((size)*sizeof(*(var))))
+#define CALLOC_ARRAY(var, size) ((var) = calloc((size), sizeof(*(var))))
+
 #define cell( _i_, _j_ ) board[ ld_board * (_j_) + (_i_) ]
 #define ngb( _i_, _j_ )  nb_neighbour[ ld_nb_neighbour * ((_j_) - 1) + ((_i_) - 1 ) ]
 
@@ -29,7 +33,7 @@ void output_board(int N, int *board, int ld_board, int loop)
 }
 
 /**
- * This function generates the iniatl board with one row and one
+ * This function generates the initial board with one row and one
  * column of living cells in the middle of the board
  */
 int generate_initial_board(int N, int *board, int ld_board)
@@ -41,29 +45,23 @@ int generate_initial_board(int N, int *board, int ld_board)
 	    if (i == N/2 || j == N/2) {
 		cell(i, j) = 1;
 		num_alive ++;
-	    }
-	    else {
+	    } else
 		cell(i, j) = 0;
-	    }
 	}
     }
 
     return num_alive;
 }
 
-static void main_loop(const int board_size, int maxloop)
+int board_size, maxloop, nb_threads;
+int ld_board, ld_nb_neighbour;
+int *board, *nb_neighbour;
+
+static void main_loop(void)
 {
-    /* Leading dimension of the board array */
-    int ld_board = board_size + 2;
-    /* Leading dimension of the neigbour counters array */
-    int ld_nb_neighbour = board_size;
+    int num_alive = 0;
 
-    int *board = malloc( ld_board * ld_board * sizeof(int) );
-    int *nb_neighbour = malloc( ld_nb_neighbour * ld_nb_neighbour * sizeof(int) );
-    int num_alive = generate_initial_board( board_size, &(cell(1, 1)), ld_board );
-    printf("Starting number of living cells = %d\n", num_alive);
-
-    for (int loop = 1; loop <= maxloop; loop++) {
+    for (int loop = 0; loop < maxloop; ++loop) {
 
 	cell(   0, 0   ) = cell(board_size, board_size);
 	cell(   0, board_size+1) = cell(board_size,  1);
@@ -90,15 +88,15 @@ static void main_loop(const int board_size, int maxloop)
 	num_alive = 0;
 	#pragma omp parallel for schedule(static) reduction(+:num_alive)
 	for (int j = 1; j <= board_size; j++) {
-	    for (int i = 1; i <= board_size; i++) {
-		if ( (ngb( i, j ) < 2) || (ngb( i, j ) > 3) )
-		    cell(i, j) = 0;
-		else if ((ngb( i, j )) == 3)
-		    cell(i, j) = 1;
-		if (cell(i, j) == 1)
-		    ++num_alive;
-	    }
-	}
+            for (int i = 1; i <= board_size; i++) {
+                if ( (ngb( i, j ) < 2) || (ngb( i, j ) > 3) )
+                    cell(i, j) = 0;
+                else if ((ngb( i, j )) == 3)
+                    cell(i, j) = 1;
+                if (cell(i, j) == 1)
+                    ++num_alive;
+            }
+        }
 
 	/* Avec les cellules sur les bords
            (utile pour vérifier les comm MPI) */
@@ -110,6 +108,24 @@ static void main_loop(const int board_size, int maxloop)
     }
 
     printf("Final number of living cells = %d\n", num_alive);
+}
+
+static void game_of_life(void)
+{
+    /* Leading dimension of the board array */
+    ld_board = board_size + 2;
+    /* Leading dimension of the neigbour counters array */
+    ld_nb_neighbour = board_size;
+
+    MALLOC_ARRAY(board, SQUARE(ld_board));
+    MALLOC_ARRAY(nb_neighbour, SQUARE(ld_nb_neighbour));
+
+    int num_alive = generate_initial_board(
+        board_size, &(cell(1, 1)), ld_board);
+    printf("Starting number of living cells = %d\n", num_alive);
+
+    main_loop();
+
     free(board);
     free(nb_neighbour);
 }
@@ -117,21 +133,21 @@ static void main_loop(const int board_size, int maxloop)
 int main(int argc, char *argv[])
 {
     if (argc < 3) {
-	printf("Usage: %s nb_iterations size\n", argv[0]);
+	printf("Usage: %s Nb_Iterations Board_Size\n", argv[0]);
 	return EXIT_SUCCESS;
     }
-    int maxloop = atoi(argv[1]);
-    int board_size = atoi(argv[2]);
+    maxloop = atoi(argv[1]);
+    board_size = atoi(argv[2]);
 
     printf("Running OMP version, "
 	   "grid of size %d, %d iterations\n", board_size, maxloop);
 
     double t1 = cgl_timer();
-    main_loop(board_size, maxloop);
+    game_of_life();
     double t2 = cgl_timer();
 
     double temps = t2 - t1;
-    printf("%.2lf\n",(double)temps * 1.e3);
+    printf("%.2lf ms\n",(double)temps * 1.e3);
 
     return EXIT_SUCCESS;
 }

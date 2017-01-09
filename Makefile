@@ -1,12 +1,12 @@
 TARGET=life_seq life_pthread life_omp
-CFLAGS=-std=gnu99 -fopenmp -g -Wall -Wextra -fdiagnostics-color=auto $(shell pkg-config --cflags glib-2.0)
+CFLAGS=-std=gnu99 -fopenmp -g -Wall -Wextra -fdiagnostics-color=auto # $(shell pkg-config --cflags glib-2.0)
 LDFLAGS=-fopenmp
-LIBS=-lm $(shell pkg-config --libs glib-2.0) 
+LIBS= #-lm $(shell pkg-config --libs glib-2.0)
 GENGETOPT=gengetopt
 CC=gcc
 
 ifdef DEBUG
-CFLAGS+=-ggdb -O0 -DDEBUG=1
+CFLAGS+=-ggdb -O0 -DDEBUG=1 -DCGL_DEBUG=1
 else
 CFLAGS+=-O3
 endif
