@@ -1,7 +1,7 @@
-TARGET=life_seq life_pthread life_omp
+TARGET=life_seq life_pthread life_omp life_mpi
 CFLAGS=-std=gnu99 -fopenmp -g -Wall -Wextra -fdiagnostics-color=auto # $(shell pkg-config --cflags glib-2.0)
 LDFLAGS=-fopenmp
-LIBS= #-lm $(shell pkg-config --libs glib-2.0)
+LIBS= -lm # $(shell pkg-config --libs glib-2.0)
 GENGETOPT=gengetopt
 CC=gcc
 
@@ -14,10 +14,12 @@ endif
 SRC_seq= life_seq.c
 SRC_pthread= life_pthread.c
 SRC_omp= life_omp.c
+SRC_mpi= life_mpi.c
 
 OBJ_seq=$(SRC_seq:.c=.o)
 OBJ_pthread=$(SRC_pthread:.c=.o)
 OBJ_omp=$(SRC_omp:.c=.o)
+OBJ_mpi=$(SRC_mpi:.c=.o)
 
 DEP=$(SRC:.c=.d)
 
@@ -33,6 +35,12 @@ life_pthread: $(OBJ_pthread)
 	$(CC) $^ -o $@ $(LDFLAGS) $(LIBS)
 
 life_omp: $(OBJ_omp)
+	$(CC) $^ -o $@ $(LDFLAGS) $(LIBS)
+
+life_mpi: CC=mpicc
+life_mpi:
+
+life_mpi: $(OBJ_mpi)
 	$(CC) $^ -o $@ $(LDFLAGS) $(LIBS)
 
 %.o: %.c

@@ -153,7 +153,7 @@ static inline void cgl_main_loop_debug_output(
             cell(board_size+1,    i) = cell( 1,  i);                    \
         }                                                               \
     } while(0)                                                          \
-        
+
 static void *main_loop(void *args)
 {
     int num_alive = 0;
@@ -175,7 +175,7 @@ static void *main_loop(void *args)
 
         barrier_STOP(nb_threads);
             SWAP_POINTER(board, next_board);
-        
+
         #ifdef CGL_DEBUG
         cgl_main_loop_debug_output(loop, rank, num_alive, B, C, block_size);
         #endif
