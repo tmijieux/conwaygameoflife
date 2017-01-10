@@ -25,6 +25,7 @@ struct thread_info_ {
     pthread_cond_t cond_right;
     int read_left;
     int read_right;
+    int num_alive;
 };
 
 
@@ -42,8 +43,8 @@ static double cgl_timer(void)
 
 static void check_board(int N, int *board, int ld_board)
 {
-    for (int i = 0; i < N; ++i)
-        for (int j = 0; j < N; ++j)
+    for (int j = 0; j < N; ++j)
+        for (int i = 0; i < N; ++i)
             assert( (cell(i, j) == 1 || cell(i, j) == 0) );
 }
 
@@ -228,34 +229,58 @@ static void check_neighbours_read(int rank, int loop)
     pthread_mutex_unlock(&ti->m);
 }
 
+
+static inline void cgl_main_loop_debug_output(
+    int loop, int rank, int num_alive, int B, int C, int block_size)
+{
+    barrier_STOP(nb_threads);
+    if(!rank) printf("iterations %d\n", loop);
+    barrier_STOP(nb_threads);
+    printf("%d cells are alive (rank %d)\n", num_alive, rank);
+    barrier_STOP(nb_threads);
+    printf("B=%d, C=%d rank=%d, block_size=%d\n",
+        B, C, rank, block_size);
+    barrier_STOP(nb_threads);
+    if(!rank) puts("");
+    barrier_STOP(nb_threads);
+
+    /* Avec les cellules sur les bords
+       (utile pour vérifier les comm MPI) */
+    /* output_board( board_size+2, &(cell(0, 0)), ld_board, loop ); */
+
+    /* Avec juste les "vraies" cellules: on commence à l'élément (1,1) */
+    // output_board( board_size, &(cell(1, 1)), ld_board, loop);
+    // printf("%d cells are alive\n", num_alive);
+}
+
+static inline void global_border_ghost_zone_recopy(void)
+{
+    cell(   0, 0   )                 = cell(board_size, board_size);
+    cell(   0, board_size+1)         = cell(board_size,  1);
+    cell(board_size+1, 0   )         = cell( 1, board_size);
+    cell(board_size+1, board_size+1) = cell( 1,  1);
+
+    for (int i = 1; i <= board_size; ++i) {
+        cell(   i,    0)         = cell( i, board_size);
+        cell(   i, board_size+1) = cell( i,  1);
+        cell(   0,    i)         = cell(board_size,  i);
+        cell(board_size+1,    i) = cell( 1,  i);
+    }
+}
+
 static void *main_loop(void *args)
 {
     int num_alive = 0;
     int rank = (uintptr_t)args;
+    int block_size = board_size/nb_threads;
+    int B = block_size*rank+1;
+    int C = block_size*(rank+1);
 
     for (int loop = 0; loop < maxloop; ++loop) {
-        if (rank == 0) {
-            cell(   0, 0   )                 = cell(board_size, board_size);
-            cell(   0, board_size+1)         = cell(board_size,  1);
-            cell(board_size+1, 0   )         = cell( 1, board_size);
-            cell(board_size+1, board_size+1) = cell( 1,  1);
+        if (rank == 0)
+            global_border_ghost_zone_recopy();
 
-            for (int i = 1; i <= board_size; ++i) {
-                cell(   i,    0)         = cell( i, board_size);
-                cell(   i, board_size+1) = cell( i,  1);
-                cell(   0,    i)         = cell(board_size,  i);
-                cell(board_size+1,    i) = cell( 1,  i);
-            }
-        }
         barrier_STOP(nb_threads);
-        ASSERT_MSG(
-            "board size must be multiple of thread count",
-            board_size % nb_threads == 0
-        );
-
-        int block_size = board_size/nb_threads;
-        int B = block_size*rank+1;
-        int C = block_size*(rank+1);
 
         // 1 - Lire les cellules des threads voisins
         read_border_extern_neighbour(B, C);
@@ -273,32 +298,14 @@ static void *main_loop(void *args)
 
         // 5 - Mise à jour aux bords
         compute_extern_cells(B, C, &num_alive);
+        barrier_STOP(nb_threads);
 
         #ifdef CGL_DEBUG
-        barrier_STOP(nb_threads);
-        if(!rank) printf("iterations %d\n", loop);
-        barrier_STOP(nb_threads);
-        printf("%d cells are alive (rank %d)\n", num_alive, rank);
-        barrier_STOP(nb_threads);
-        printf("B=%d, C=%d rank=%d, block_size=%d\n",
-               B, C, rank, block_size);
-        barrier_STOP(nb_threads);
-        if(!rank) puts("");
-        barrier_STOP(nb_threads);
+        cgl_main_loop_debug_output(loop, rank, num_alive, B, C, block_size);
         #endif
-        barrier_STOP(nb_threads);
-
-        /* Avec les cellules sur les bords
-           (utile pour vérifier les comm MPI) */
-
-        /* output_board( board_size+2, &(cell(0, 0)), ld_board, loop ); */
-
-        /* Avec juste les "vraies" cellules: on commence à l'élément (1,1) */
-        // output_board( board_size, &(cell(1, 1)), ld_board, loop);
-        // printf("%d cells are alive\n", num_alive);
     }
 
-    //printf("Final number of living cells (rank %d) = %d\n", rank, num_alive);
+    thread_infos[rank].num_alive = num_alive;
     return NULL;
 }
 
@@ -317,6 +324,11 @@ static void game_of_life(void)
 
     printf("Starting number of living cells = %d\n", num_alive);
     nb_threads = get_nprocs();
+    ASSERT_MSG(
+        "board size must be multiple of thread count",
+        board_size % nb_threads == 0
+    );
+
     pthread_t t[nb_threads];
 
     CALLOC_ARRAY(thread_infos, nb_threads);
@@ -333,11 +345,16 @@ static void game_of_life(void)
     for (int i = 0; i < nb_threads; ++i)
         pthread_create(t+i, NULL, main_loop, (void*)(uintptr_t)i);
 
-    for (int i = 0; i < nb_threads; ++i)
+    num_alive = 0;
+    for (int i = 0; i < nb_threads; ++i) {
         pthread_join(t[i], NULL);
+        num_alive += thread_infos[i].num_alive;
+    }
+    printf("Final number of living cells = %d\n", num_alive);
 
     free(board);
     free(nb_neighbour);
+    free(thread_infos);
 }
 
 int main(int argc, char *argv[])
