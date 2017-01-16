@@ -4,6 +4,7 @@
 #include <sys/sysinfo.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <assert.h>
 #include <mpi.h>
 #include <math.h>
@@ -17,6 +18,10 @@
 
 #define cell( _i_, _j_ ) B->board[ B->ld_board * (_j_) + (_i_) ]
 #define ngb( _i_, _j_ )  B->nb_neighbour[ B->ld_nb_neighbour * ((_j_) - 1) + ((_i_) - 1 ) ]
+
+
+#define CGL_BOARD_TYPE     int
+#define CGL_BOARD_MPI_TYPE MPI_INT
 
 typedef struct cgl_proc_ cgl_proc;
 struct cgl_proc_ {
@@ -101,23 +106,38 @@ cgl_board_generate(cgl_board *B, cgl_proc *P)
     return num_alive;
 }
 
+static MPI_Datatype line_type;
+
+static void cgl_board_setup_mpi_type(cgl_board *B)
+{
+    static bool ran_once = false;
+
+    if (ran_once)
+        return;
+    ran_once = true;
+    
+    MPI_Type_vector(B->ld_board, 1, B->ld_board, MPI_INT, &line_type);
+    MPI_Type_commit(&line_type);
+}
+
 static void (Write)(cgl_board *B, cgl_proc *P)
 {
     int n = B->n;
 
+    // left
     MPI_Send( &(cell(1, 1)), n, MPI_INT, P->prev_col, 0, P->line_comm);
+
+    //right
     MPI_Send( &(cell(1, n)), n, MPI_INT, P->next_col, 0, P->line_comm);
-    MPI_Send( &(cell(1, 1)), n, MPI_INT, P->prev_line, 0, P->col_comm);
-    MPI_Send( &(cell(n, 1)), n, MPI_INT, P->next_line, 0, P->col_comm);
 
-}
+    // ---
+    
+    // top
+    MPI_Send( &(cell(1, 0)), 1, line_type, P->prev_line, 0, P->col_comm);
 
-static void (CompleteWrite)(cgl_board *B, cgl_proc *P)
-{
-    MPI_Send( &(cell(0, 0)), n, MPI_INT, P->prev_col, 0, P->line_comm);
-    MPI_Send( &(cell(0, 0)), n, MPI_INT, P->next_col, 0, P->line_comm);
-    MPI_Send( &(cell(0, 0)), n, MPI_INT, P->prev_line, 0, P->col_comm);
-    MPI_Send( &(cell(0, 0)), n, MPI_INT, P->next_line, 0, P->col_comm);
+    // bot
+    MPI_Send( &(cell(n, 0)), 1, line_type, P->next_line, 0, P->col_comm);
+
 }
 
 static void (Receive)(cgl_board *B, cgl_proc *P)
@@ -130,11 +150,13 @@ static void (Receive)(cgl_board *B, cgl_proc *P)
     //right
     MPI_Recv( &(cell(1, n+1)), n, MPI_INT, P->next_col, 0, P->line_comm);
 
+    // ---
+    
     //top
-    MPI_Recv( &(cell(0,   1)), n, MPI_INT, P->prev_line, 0, P->col_comm);
+    MPI_Recv( &(cell(0,   0)), n+2, MPI_INT, P->prev_line, 0, P->col_comm);
 
     //bot
-    MPI_Recv( &(cell(n+1, 1)), n, MPI_INT, P->next_line, 0, P->col_comm);
+    MPI_Recv( &(cell(n+1, 0)), n+2, MPI_INT, P->next_line, 0, P->col_comm);
 }
 
 static int
@@ -223,6 +245,8 @@ cgl_board_init(cgl_board *B, cgl_proc *P, int64_t board_size)
     int num_alive = cgl_board_generate(B, P);
 
     printf("Starting number of living cells = %d\n", num_alive);
+
+    cgl_board_setup_mpi_type(B);
 }
 
 int main(int argc, char *argv[])
