@@ -120,59 +120,62 @@ static void cgl_board_setup_mpi_type(cgl_board *B)
     MPI_Type_commit(&line_type);
 }
 
-static void (Write)(cgl_board *B, cgl_proc *P)
+static void exchange_right_left(cgl_board *B, cgl_proc *P)
 {
+    MPI_Request r[4] = {
+        MPI_REQUEST_NULL, MPI_REQUEST_NULL,
+        MPI_REQUEST_NULL, MPI_REQUEST_NULL };
+    MPI_Status st[4];
     int n = B->n;
+    
+    //right
+    MPI_Isend( &(cell(1, n)), n, MPI_INT,
+               P->next_col, 0, P->line_comm, r);
+    MPI_Irecv( &(cell(1, n+1)), n, MPI_INT,
+               P->next_col, 0, P->line_comm, r+1);
 
     // left
-    MPI_Send( &(cell(1, 1)), n, MPI_INT, P->prev_col, 0, P->line_comm);
+    MPI_Isend( &(cell(1, 1)), n, MPI_INT,
+               P->prev_col, 0, P->line_comm, r+2);
+    MPI_Irecv( &(cell(1, 0)), n, MPI_INT,
+               P->prev_col, 0, P->line_comm, r+3);
 
-    //right
-    MPI_Send( &(cell(1, n)), n, MPI_INT, P->next_col, 0, P->line_comm);
-
-    // ---
-    
-    // top
-    MPI_Send( &(cell(1, 0)), 1, line_type, P->prev_line, 0, P->col_comm);
-
-    // bot
-    MPI_Send( &(cell(n, 0)), 1, line_type, P->next_line, 0, P->col_comm);
-
+    MPI_Waitall(4, r, st);
 }
 
-static void (Receive)(cgl_board *B, cgl_proc *P)
+static void exchange_top_bot(cgl_board *B, cgl_proc *P)
 {
+    MPI_Request r[4] = {
+        MPI_REQUEST_NULL, MPI_REQUEST_NULL,
+        MPI_REQUEST_NULL, MPI_REQUEST_NULL };
+    MPI_Status st[4];
     int n = B->n;
-
-    // left
-    MPI_Recv( &(cell(1,   0)), n, MPI_INT, P->prev_col, 0, P->line_comm);
-
-    //right
-    MPI_Recv( &(cell(1, n+1)), n, MPI_INT, P->next_col, 0, P->line_comm);
-
-    // ---
     
     //top
-    MPI_Recv( &(cell(0,   0)), n+2, MPI_INT, P->prev_line, 0, P->col_comm);
-
-    //bot
-    MPI_Recv( &(cell(n+1, 0)), n+2, MPI_INT, P->next_line, 0, P->col_comm);
+    MPI_Isend( &(cell(1, 0)), 1, line_type,
+               P->prev_line, 0, P->col_comm, r);
+    MPI_Irecv( &(cell(0,   0)), 1, line_type,
+               P->prev_line, 0, P->col_comm, r+1);
+    
+    // bot
+    MPI_Isend( &(cell(n, 0)), 1, line_type,
+               P->next_line, 0, P->col_comm, r+2);
+    MPI_Irecv( &(cell(n+1, 0)), 1, line_type,
+               P->next_line, 0, P->col_comm, r+3);
+    
+    MPI_Waitall(4, r, st);
 }
 
 static int
 cgl_board_main_loop(cgl_board *B, cgl_proc *P, int maxloop)
 {
-    (void) P;
-
     int num_alive = 0;
     int board_size = B->n;
 
-    (Write());
-
     for (int loop = 0; loop < maxloop; ++loop) {
-
-        (CompleteWrite());
-        (Receive());
+        
+        exchange_right_left(B, P);
+        exchange_top_bot(B, P);
 
         for (int j = 1; j <= board_size; j++) {
             for (int i = 1; i <= board_size; i++) {
@@ -182,8 +185,6 @@ cgl_board_main_loop(cgl_board *B, cgl_proc *P, int maxloop)
                     cell( i-1, j+1 ) + cell( i, j+1 ) + cell( i+1, j+1 );
             }
         }
-
-        (Write());
 
         MPI_Barrier(MPI_COMM_WORLD);
     }
