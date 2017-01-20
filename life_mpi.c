@@ -89,13 +89,13 @@ cgl_board_generate(cgl_board *B, cgl_proc *P)
     int j = GLOBAL_TO_LOCAL_ORDINATE(N/2);
 
     if (IS_LOCAL_ABSCISSA(i)) {
-        for (int k = 0; k < n; ++k) {
+        for (int k = 1; k < n; ++k) {
             cell(i, k) = 1;
             ++ num_alive;
         }
     }
     if (IS_LOCAL_ORDINATE(j)) {
-        for (int k = 0; k < n; ++k) {
+        for (int k = 1; k < n; ++k) {
             cell(k, j) = 1;
             ++ num_alive;
         }
@@ -223,7 +223,6 @@ void cgl_proc_init(cgl_proc *p)
 
     MPI_Cart_shift(p->line_comm, 0, 1, &p->prev_col, &p->next_col);
     MPI_Cart_shift(p->col_comm, 0, 1, &p->prev_line, &p->next_line);
-
 }
 
 static void
