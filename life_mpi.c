@@ -20,8 +20,8 @@
 #define ngb( _i_, _j_ )  B->nb_neighbour[ B->ld_nb_neighbour * ((_j_) - 1) + ((_i_) - 1 ) ]
 
 
-#define CGL_BOARD_TYPE     int
-#define CGL_BOARD_MPI_TYPE MPI_INT
+#define CGL_BOARD_TYPE     uint8_t
+#define CGL_BOARD_MPI_TYPE MPI_UNSIGNED_CHAR
 
 typedef struct cgl_proc_ cgl_proc;
 struct cgl_proc_ {
@@ -38,8 +38,8 @@ struct cgl_proc_ {
 typedef struct cgl_board_ cgl_board;
 struct cgl_board_ {
     int n;
-    char *board;
-    char *nb_neighbour;
+    CGL_BOARD_TYPE *board;
+    uint8_t *nb_neighbour;
     int ld_board;
     int ld_nb_neighbour;
 };
@@ -54,8 +54,8 @@ static double cgl_timer(void)
 static void output_board(cgl_board *B)
 {
     int N = B->n;
-    for (int i = 1; i < N; ++i) {
-        for (int j = 1; j < N; ++j) {
+    for (int i = 0; i <= N+1; ++i) {
+        for (int j = 0; j <= N+1; ++j) {
             if ( cell( i, j ) == 1 )
                 printf("X");
             else
@@ -71,34 +71,35 @@ static void output_board(cgl_board *B)
  */
 
 
-#define GLOBAL_TO_LOCAL_ABSCISSA(x_) ((x_) - (P->col*B->n))
-#define GLOBAL_TO_LOCAL_ORDINATE(y_) ((y_) - (P->line*B->n))
-#define IS_LOCAL_ABSCISSA(x_) ((x_) >= 0 && (x_) < B->n)
-#define IS_LOCAL_ORDINATE(y_) IS_LOCAL_ABSCISSA(y_)
+#define GLOBAL_TO_LOCAL_LINE(i_) (((i_) - (P->line*B->n))+1)
+#define GLOBAL_TO_LOCAL_COL(j_) (((j_) - (P->col*B->n))+1)
+#define IS_LOCAL_LINE(i_) ((i_) >= 1 && (i_) <= B->n)
+#define IS_LOCAL_COL(j_) IS_LOCAL_LINE(j_)
 
 static int
 cgl_board_generate(cgl_board *B, cgl_proc *P)
 {
-
     int num_alive = 0;
     int n = B->n;
     int N = n * P->group_length;
-    int i = GLOBAL_TO_LOCAL_ABSCISSA(N/2);
-    int j = GLOBAL_TO_LOCAL_ORDINATE(N/2);
+    int i = GLOBAL_TO_LOCAL_LINE(N/2);
+    int j = GLOBAL_TO_LOCAL_COL(N/2);
 
-    if (IS_LOCAL_ABSCISSA(i)) {
-        for (int k = 1; k < n; ++k) {
+    if (IS_LOCAL_LINE(i)) {
+        printf("bla rank=%d i=%d N/2=%d col=%d line=%d\n", P->rank, i, N/2, P->col, P->line);
+        for (int k = 1; k <= n; ++k) {
             cell(i, k) = 1;
             ++ num_alive;
         }
     }
-    if (IS_LOCAL_ORDINATE(j)) {
-        for (int k = 1; k < n; ++k) {
+    if (IS_LOCAL_COL(j)) {
+        printf("ble rank=%d j=%d N/2=%d col=%d line=%d\n", P->rank, j, N/2, P->col, P->line);
+        for (int k = 1; k <= n; ++k) {
             cell(k, j) = 1;
             ++ num_alive;
         }
     }
-    if (IS_LOCAL_ABSCISSA(i) && IS_LOCAL_ORDINATE(j))
+    if (IS_LOCAL_LINE(i) && IS_LOCAL_COL(j))
         -- num_alive;
 
     return num_alive;
@@ -113,60 +114,54 @@ static void cgl_board_setup_mpi_type(cgl_board *B)
     if (ran_once)
         return;
     ran_once = true;
-    
-    MPI_Type_vector(B->ld_board, 1, B->ld_board, MPI_INT, &line_type);
+
+    MPI_Type_vector(B->ld_board, 1, B->ld_board, CGL_BOARD_MPI_TYPE, &line_type);
     MPI_Type_commit(&line_type);
 }
 
 static void exchange_right_left(cgl_board *B, cgl_proc *P)
 {
-    if (P->group_size < 2)
-        return;
-    
     MPI_Request r[4] = {
         MPI_REQUEST_NULL, MPI_REQUEST_NULL,
         MPI_REQUEST_NULL, MPI_REQUEST_NULL };
     MPI_Status st[4];
     int n = B->n;
-    
+
     //right
-    MPI_Isend( &(cell(1, n)), n, MPI_INT,
-               P->next_col, 0, P->line_comm, r);
-    MPI_Irecv( &(cell(1, n+1)), n, MPI_INT,
-               P->next_col, 0, P->line_comm, r+1);
+    MPI_Isend( &(cell(1, n)), n, CGL_BOARD_MPI_TYPE,
+               P->next_col, 2, P->line_comm, r);
+    MPI_Irecv( &(cell(1, n+1)), n, CGL_BOARD_MPI_TYPE,
+               P->next_col, 3, P->line_comm, r+1);
 
     // left
-    MPI_Isend( &(cell(1, 1)), n, MPI_INT,
-               P->prev_col, 0, P->line_comm, r+2);
-    MPI_Irecv( &(cell(1, 0)), n, MPI_INT,
-               P->prev_col, 0, P->line_comm, r+3);
+    MPI_Isend( &(cell(1, 1)), n, CGL_BOARD_MPI_TYPE,
+               P->prev_col, 3, P->line_comm, r+2);
+    MPI_Irecv( &(cell(1, 0)), n, CGL_BOARD_MPI_TYPE,
+               P->prev_col, 2, P->line_comm, r+3);
 
     MPI_Waitall(4, r, st);
 }
 
 static void exchange_top_bot(cgl_board *B, cgl_proc *P)
 {
-    if (P->group_size < 2)
-        return;
-    
     MPI_Request r[4] = {
         MPI_REQUEST_NULL, MPI_REQUEST_NULL,
         MPI_REQUEST_NULL, MPI_REQUEST_NULL };
     MPI_Status st[4];
     int n = B->n;
-    
+
     //top
     MPI_Isend( &(cell(1, 0)), 1, line_type,
                P->prev_line, 0, P->col_comm, r);
     MPI_Irecv( &(cell(0,   0)), 1, line_type,
-               P->prev_line, 0, P->col_comm, r+1);
-    
+               P->prev_line, 1, P->col_comm, r+1);
+
     // bot
     MPI_Isend( &(cell(n, 0)), 1, line_type,
-               P->next_line, 0, P->col_comm, r+2);
+               P->next_line, 1, P->col_comm, r+2);
     MPI_Irecv( &(cell(n+1, 0)), 1, line_type,
                P->next_line, 0, P->col_comm, r+3);
-    
+
     MPI_Waitall(4, r, st);
 }
 
@@ -180,10 +175,10 @@ static void distributed_output_board(cgl_board *B, cgl_proc *P, int loop)
     for (int i = 0; i < P->group_size; ++i) {
         MPI_Barrier(MPI_COMM_WORLD);
         if (P->rank == i) {
+            printf("[(%d, %d), %d]\n", P->line, P->col, loop);
             output_board(B);
             puts("");
         }
-        synch();
         MPI_Barrier(MPI_COMM_WORLD);
     }
     MPI_Barrier(MPI_COMM_WORLD);
@@ -201,6 +196,7 @@ cgl_board_main_loop(cgl_board *B, cgl_proc *P, int maxloop)
     {
         exchange_right_left(B, P);
         exchange_top_bot(B, P);
+        distributed_output_board(B, P, loop);
 
         for (int j = 1; j <= board_size; j++) {
             for (int i = 1; i <= board_size; i++) {
@@ -210,7 +206,7 @@ cgl_board_main_loop(cgl_board *B, cgl_proc *P, int maxloop)
                     cell( i-1, j+1 ) + cell( i, j+1 ) + cell( i+1, j+1 );
             }
         }
-        
+
 	num_alive = 0;
 	for (int j = 1; j <= board_size; j++) {
 	    for (int i = 1; i <= board_size; i++) {
@@ -222,8 +218,9 @@ cgl_board_main_loop(cgl_board *B, cgl_proc *P, int maxloop)
 		    num_alive ++;
 	    }
 	}
-        distributed_output_board(B, P, loop);
     }
+    distributed_output_board(B, P, -2);
+
     return num_alive;
 }
 
@@ -268,6 +265,7 @@ cgl_board_init(cgl_board *B, cgl_proc *P, int64_t board_size)
         board_size % P->group_length == 0
     );
     int n = B->n = board_size / P->group_length;
+    printf("n=%d\n", n);
 
     /* Leading dimension of the board array */
     B->ld_board = n + 2;
@@ -298,9 +296,9 @@ int main(int argc, char *argv[])
     int maxloop = atoi(argv[1]);
     int board_size = atoi(argv[2]);
 
-    printf("Running MPI version, "
+    printf("Running MPI version\n"
            "grid of size %d, %d iterations\n"
-           "rank %d, group_size %d",
+           "rank %d, group_size %d\n\n",
            board_size, maxloop, P.rank, P.group_size);
 
     cgl_board_init(&B, &P, board_size);
@@ -314,7 +312,8 @@ int main(int argc, char *argv[])
     MPI_Allreduce(&num_alive, &total_num_alive, 1,
                   MPI_INT, MPI_SUM, MPI_COMM_WORLD);
 
-    printf("num_alive=%d, %gms\n", total_num_alive, time * 1.e3);
+    if (P.rank == 0)
+        printf("num_alive=%d \n%gms\n", total_num_alive, time * 1.e3);
 
     MPI_Finalize();
     return EXIT_SUCCESS;

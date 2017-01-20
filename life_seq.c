@@ -58,6 +58,8 @@ int *board, *nb_neighbour;
 static void main_loop(void)
 {
     int num_alive = 0;
+    output_board( board_size+2, &(cell(0, 0)), ld_board, -1);
+
 
     for (int loop = 0; loop < maxloop; ++loop) {
 
@@ -72,6 +74,8 @@ static void main_loop(void)
 	    cell(   0,    i) = cell(board_size,  i);
 	    cell(board_size+1,    i) = cell( 1,  i);
 	}
+        output_board( board_size+2, &(cell(0, 0)), ld_board, loop);
+
 
 	for (int j = 1; j <= board_size; j++) {
 	    for (int i = 1; i <= board_size; i++) {
@@ -93,14 +97,9 @@ static void main_loop(void)
 		    num_alive ++;
 	    }
 	}
-        /* Avec les cellules sur les bords
-           (utile pour vérifier les comm MPI) */
-        /* output_board( board_size+2, &(cell(0, 0)), ld_board, loop ); */
-        /* Avec juste les "vraies" cellules: on commence à l'élément (1,1) */
-        //output_board( board_size, &(cell(1, 1)), ld_board, loop);
-
-	//printf("%d cells are alive\n", num_alive);
     }
+
+    output_board( board_size+2, &(cell(0, 0)), ld_board, -2);
 
     printf("Final number of living cells = %d\n", num_alive);
 }
