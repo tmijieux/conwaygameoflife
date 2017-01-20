@@ -51,13 +51,11 @@ static double cgl_timer(void)
     return tp.tv_sec + 1e-6 * tp.tv_usec;
 }
 
-static void output_board(cgl_board *B, int loop)
+static void output_board(cgl_board *B)
 {
     int N = B->n;
-
-    printf("loop %d\n", loop);
-    for (int i = 0; i < N; ++i) {
-        for (int j = 0; j < N; ++j) {
+    for (int i = 1; i < N; ++i) {
+        for (int j = 1; j < N; ++j) {
             if ( cell( i, j ) == 1 )
                 printf("X");
             else
@@ -122,6 +120,9 @@ static void cgl_board_setup_mpi_type(cgl_board *B)
 
 static void exchange_right_left(cgl_board *B, cgl_proc *P)
 {
+    if (P->group_size < 2)
+        return;
+    
     MPI_Request r[4] = {
         MPI_REQUEST_NULL, MPI_REQUEST_NULL,
         MPI_REQUEST_NULL, MPI_REQUEST_NULL };
@@ -145,6 +146,9 @@ static void exchange_right_left(cgl_board *B, cgl_proc *P)
 
 static void exchange_top_bot(cgl_board *B, cgl_proc *P)
 {
+    if (P->group_size < 2)
+        return;
+    
     MPI_Request r[4] = {
         MPI_REQUEST_NULL, MPI_REQUEST_NULL,
         MPI_REQUEST_NULL, MPI_REQUEST_NULL };
@@ -166,14 +170,35 @@ static void exchange_top_bot(cgl_board *B, cgl_proc *P)
     MPI_Waitall(4, r, st);
 }
 
+static void distributed_output_board(cgl_board *B, cgl_proc *P, int loop)
+{
+    MPI_Barrier(MPI_COMM_WORLD);
+    if (P->rank == 0)
+        printf("\n_______________________________\nloop %d\n", loop);
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    for (int i = 0; i < P->group_size; ++i) {
+        MPI_Barrier(MPI_COMM_WORLD);
+        if (P->rank == i) {
+            output_board(B);
+            puts("");
+        }
+        synch();
+        MPI_Barrier(MPI_COMM_WORLD);
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+}
+
 static int
 cgl_board_main_loop(cgl_board *B, cgl_proc *P, int maxloop)
 {
     int num_alive = 0;
     int board_size = B->n;
 
-    for (int loop = 0; loop < maxloop; ++loop) {
-        
+    distributed_output_board(B, P, -1);
+
+    for (int loop = 0; loop < maxloop; ++loop)
+    {
         exchange_right_left(B, P);
         exchange_top_bot(B, P);
 
@@ -185,10 +210,20 @@ cgl_board_main_loop(cgl_board *B, cgl_proc *P, int maxloop)
                     cell( i-1, j+1 ) + cell( i, j+1 ) + cell( i+1, j+1 );
             }
         }
-
-        MPI_Barrier(MPI_COMM_WORLD);
+        
+	num_alive = 0;
+	for (int j = 1; j <= board_size; j++) {
+	    for (int i = 1; i <= board_size; i++) {
+		if ( (ngb( i, j ) < 2) ||(ngb( i, j ) > 3) )
+		    cell(i, j) = 0;
+                else if ((ngb( i, j )) == 3)
+                    cell(i, j) = 1;
+		if (cell(i, j) == 1)
+		    num_alive ++;
+	    }
+	}
+        distributed_output_board(B, P, loop);
     }
-
     return num_alive;
 }
 
@@ -243,7 +278,6 @@ cgl_board_init(cgl_board *B, cgl_proc *P, int64_t board_size)
     MALLOC_ARRAY(B->nb_neighbour, SQUARE(B->ld_nb_neighbour));
 
     int num_alive = cgl_board_generate(B, P);
-
     printf("Starting number of living cells = %d\n", num_alive);
 
     cgl_board_setup_mpi_type(B);
@@ -272,12 +306,15 @@ int main(int argc, char *argv[])
     cgl_board_init(&B, &P, board_size);
 
     double t1 = cgl_timer();
-
-    cgl_board_main_loop(&B, &P, maxloop);
+    int num_alive = cgl_board_main_loop(&B, &P, maxloop);
     double t2 = cgl_timer();
-
     double time = t2 - t1;
-    printf("%gms\n", time * 1.e3);
+
+    int total_num_alive;
+    MPI_Allreduce(&num_alive, &total_num_alive, 1,
+                  MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+
+    printf("num_alive=%d, %gms\n", total_num_alive, time * 1.e3);
 
     MPI_Finalize();
     return EXIT_SUCCESS;
