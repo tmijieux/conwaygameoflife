@@ -41,13 +41,6 @@ static double cgl_timer(void)
     return tp.tv_sec + 1e-6 * tp.tv_usec;
 }
 
-static void check_board(int N, int *board, int ld_board)
-{
-    for (int j = 0; j < N; ++j)
-        for (int i = 0; i < N; ++i)
-            assert( (cell(i, j) == 1 || cell(i, j) == 0) );
-}
-
 static void output_board(int N, int *board, int ld_board, int loop)
 {
     printf("loop %d\n", loop);
