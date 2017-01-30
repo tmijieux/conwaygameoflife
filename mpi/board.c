@@ -21,7 +21,6 @@ static void output_board(cgl_board *B)
  * column of living cells in the middle of the board
  */
 
-
 #define GLOBAL_TO_LOCAL_LINE(i_) (((i_) - (P->line*B->n))+1)
 #define GLOBAL_TO_LOCAL_COL(j_) (((j_) - (P->col*B->n))+1)
 #define IS_LOCAL_LINE(i_) ((i_) >= 1 && (i_) <= B->n)
@@ -195,4 +194,11 @@ void cgl_board_init(cgl_board *B, cgl_proc *P, int64_t board_size)
     //printf("Starting number of living cells = %d\n", num_alive);
 
     cgl_board_setup_mpi_type(B);
+}
+
+void cgl_board_fini(cgl_board *B)
+{
+    free(B->board);
+    free(B->nb_neighbour);
+    memset(B, 0, sizeof*B);
 }

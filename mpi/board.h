@@ -24,6 +24,6 @@ struct cgl_board_ {
 
 void cgl_board_init(cgl_board *B, cgl_proc *P, int64_t board_size);
 int cgl_board_main_loop(cgl_board *B, cgl_proc *P, int maxloop);
-
+void cgl_board_fini(cgl_board *B);
 
 #endif // CGL_BOARD_H

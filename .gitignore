@@ -8,3 +8,6 @@ life_seq
 life_pthread
 life_omp
 life_mpi
+err.*
+out.*
+.#*

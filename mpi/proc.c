@@ -36,7 +36,6 @@ void cgl_proc_init(cgl_proc *p)
     MPI_Cart_shift(p->col_comm, 0, 1, &p->prev_line, &p->next_line);
 }
 
-
 void cgl_proc_fini(cgl_proc *P)
 {
     memset(P, 0, sizeof*P);
