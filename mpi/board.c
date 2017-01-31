@@ -180,7 +180,6 @@ void cgl_board_init(cgl_board *B, cgl_proc *P, int64_t board_size)
         board_size % P->group_length == 0
     );
     int n = B->n = board_size / P->group_length;
-    printf("n=%d\n", n);
 
     /* Leading dimension of the board array */
     B->ld_board = n + 2;

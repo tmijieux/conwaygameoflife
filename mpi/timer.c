@@ -21,5 +21,5 @@ void cgl_timer_print(cgl_timer *T, cgl_proc *P)
     MPI_Reduce(&micro, &max_t, 1, MPI_UNSIGNED_LONG,
                MPI_MAX, 0, MPI_COMM_WORLD);
     if (!P->rank)
-        printf("# %lu.%06lu s\n", max_t/1000000UL, max_t%1000000UL);
+        printf("# %d %lu.%06lu s\n", P->group_size, max_t/1000000UL, max_t%1000000UL);
 }
