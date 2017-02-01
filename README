@@ -1,0 +1,22 @@
+/******* Le répertoire courant: *******/
+Il contient les versions séquentiel, OpenMP, et threads
+Utiliser le Makefile pour compiler
+Vous trouverez des scripts pour lancer les différentes versions sur des tailles de plateau de 100 à 20000
+
+
+
+/*****Le répertoire MPI******/
+
+Il contient l'implémentation utilisant MPI (Makefile dans le répertoire pour compiler 
+Le répertoire job/ contient:
+-Script plot pour générer ou lancer differents jobs
+	-./plot.sh genjob
+	-./plot.sh batch
+-lancement sur différents nombres de processus
+-lancement sur différentes tailles de plateau
+
+
+
+/********* Rapport ******/
+
+Vous trouverez les courbes correspondantes à ces jobs et l'analyse correspondante.
